@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Logic Analyzer</title>
+	<link rel="stylesheet" href="Logic Style.css">
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+</head>
+<body>
+	<div id='logic'>
+		<div id="IC_name" style="line-height:20px;height:100px;"></div>
+		<canvas id='display' width='500' height='100'>
+		</canvas>
+	</div>
+	<div id="logic_options">
+		<div id="logic_optionsList">
+			<input id="line_color" type="checkbox" onchange="line_colorCheck()" value="no-color">Line Color<hr>
+			<div class="color_box" id="cbox1"></div>
+			HIGH Color:<input id="color_slider1" type="range" onchange="line_colorLoader(1)" min="0" max="360"><br>
+			<div class="color_box" id="cbox2"></div>
+			LOW Color:<input id="color_slider2" type="range" onchange="line_colorLoader(2)" min="0" max="360"><hr>
+			Stop Time:<input id="stop_timeText" type="number" min="0" value="0">
+			<button onclick="stop_time()">Set End Time</button>
+		</div>
+		<div id="logic_optionsShow">Display options</div>
+	</div>
+	<p id='test'>Hello</p>
+	<p id='demo'>Hi</p>
+	<p id='demo1'>Hi </p>
+	<div id="clock_control" class="clearfix">
+		<div id='pictureBox'>
+		</div>
+		<button onclick='start_logicClock()'>Start Logic Clock</button><br>
+		<button onclick='stop_logicClock()'>Stop Logic Clock</button><br>
+		<button onclick='reset_logicClock()'>Reset Logic Clock</button>
+	</div>
+	
+	<div id="functionList">
+	</div>
+	
+	<div id="create">
+		<h3>Create IC</h3>
+		Name:<input id="create_name" type="text" 
+		placeholder="IC name goes here"><br>
+		Inputs:<input id="create_inputs" type="text" 
+			placeholder="Separate inputs with spaces"><br>
+		Logical HIGH:<input id="logical_H" type="number"
+			placeholder="Enter value as a percent">%<br>
+		Logical LOW:<input id="logical_L" type="number"
+			placeholder="Enter value as a percent">%<br>
+		<button onclick="functionLoader()">Add Logic Function</button><br>
+		<input type="text" id="function_selection" value="null">
+		<div id="moreLogic"></div>
+		Logic Start:<select id="create_startLogic">
+				<option value="false">LOW</option>
+				<option value="true">HIGH</option>
+			</select><br>
+		Inversion:<select id="create_inversion">
+				<option value="false">false</option>
+				<option value="true">true</option>
+			</select><br>
+		Gate Delay:<input id="create_gateDelay" type="number" value="0"><br>
+		
+		<button onclick="IC_objectCreator()">Create Object</button>
+	</div>
+	
+	<div id="edit">
+		<h3>Edit IC</h3>
+		Change:<select id="edit_IC"></select>
+		<button onclick="editor_nameLoaderIter()">Load Names</button>
+		<button onclick="IC_editor(edit_IC.value)">Edit</button>
+		<hr>
+		<div id="editor_container">
+		</div>
+	</div>
+</body>
+<script>
+	//Functions below are used to start/stop logic clock
+	var clock;
+	/*Prevents the clock from constantly running if start clock button is 
+		pressed more then once
+	*/
+	var start_control = 0;
+	
+	function start_logicClock()
+	{
+		if (start_control == 0)	
+		{
+			load_names();
+			clock = setInterval(logic_clock,25);
+			start_control = 1;
+		}
+	}
+	function stop_logicClock()
+	{
+		clearInterval(clock);
+		start_control = 0;
+	}
+
+/*If the canvas size needs to be increased, increase the 
+	canvas size first, then (re)draw the elements on canvas
+*/
+	//Using variables to make referring to canvas easier
+	var display = document.getElementById("display");
+	var logic = display.getContext("2d");
+	
+	//DOM object for IC_name box
+	var line_nameBox = document.getElementById("IC_name");
+	var line_nameBoxTxtHgt = line_nameBox.style.lineHeight.slice(0,-2);
+	
+	//Setting up variables
+	//[logic_clock]
+	var logic_time = 0;
+	
+	//[delay_calculator]
+	var increment = 0;
+	
+	//[stop_time]
+	var stop_flag = document.getElementById("stop_timeText");
+	
+	//Space between logic lines
+	var logic_space = 5;
+	
+	//Height difference between logic levels
+	var logic_vary = line_nameBoxTxtHgt - logic_space;	
+	
+	/*Array used as a container to easily cycle through multiple logic lines.
+		MUST BE DECLARED AFTER LOGIC LINE VARIABLES.
+	*/
+	var logic_lines = [];
+	
+	function stop_time()
+	{
+		if (stop_flag.value !=0)
+		{
+			logic.beginPath();
+			logic.strokeStyle = "red";
+			logic.moveTo(stop_flag.value, 0);
+			logic.lineTo(stop_flag.value, display.height)
+			logic.stroke();
+			logic.beginPath();
+		}
+	}
+
+	function load_names()
+	{
+		var line_names = "";
+		if (logic_lines.length * line_nameBoxTxtHgt > line_nameBox.style.height.slice(0,-2))
+		{
+			display.height = logic_lines.length * line_nameBoxTxtHgt;
+			line_nameBox.style.height = display.height + "px";
+		}
+		for (var x = 0; x < logic_lines.length; x++)
+		{
+			line_names = line_names + logic_lines[x].name + "<br>";
+		}
+		line_nameBox.innerHTML = line_names;	
+	}		
+	
+	//Function used to advance logic time
+	function logic_clock()
+	{
+		if (logic_time == stop_flag.value && stop_flag.value != 0)
+		{
+			document.getElementById("demo1").innerHTML = "true";
+			stop_logicClock();
+		}
+		container_checker(logic_time);
+		logic_time = logic_time+1;
+	}
+	
+	/*The [container_checker] checks the container size and will call 
+		[expand_canvas] if the contents come too close to the edge
+	*/
+	function container_checker(logic_timing)
+	{
+		if (display.width-logic_timing <= 10)
+		{
+			display.width = display.width+100;
+			expand_canvas(logic_timing);
+		}
+		for (var x = 0; x < logic_lines.length; x++)
+		{
+			if (logic_lines[x].logic_function[0])
+			{
+				eval(logic_lines[x].logic_function[1]);
+			}
+			draw_logic(logic_lines[x], logic_timing);
+		}
+	}
+	//[expand_canvas] expands the size of canvas
+	function expand_canvas(logic_timing)
+	{
+		for (var x = 0; x < logic_lines.length; x++)
+		{
+			logic_lines[x].gate_delayLevel = 0;
+			
+			logic_lines[x].gate_increment = 0;
+			logic_lines[x].prev_logic = 0;
+			logic_lines[x].gate_signalChange = 0;
+			logic_lines[x].input_iter = 0;
+			for (var y = 0; y < 3; y++)
+			{
+				logic_lines[x].logic_output[y] = 0;
+			}
+		}
+		for (var redraw_time = 0; redraw_time < logic_timing; redraw_time++)
+		{
+			for (var x = 0; x < logic_lines.length; x++)
+			{
+				draw_logic(logic_lines[x], redraw_time);
+			}
+		}
+	}
+	
+	//[draw_logic] draws the elements on the canvas
+	function draw_logic(IC_line, time)
+	{
+		/*Placing the canvas line before the first if statement	creates the 
+			logic switching line.
+		  The two if statements below  checks for inversion. If true or not,
+			the statements stores values to logic_outut's not and flip so
+			it can be used in calculations later.
+		*/
+		if (IC_line.inverted)	
+		{
+			IC_line.logic_output[0] = -logic_vary;
+			IC_line.logic_output[1] = -1;
+		}
+		else	
+		{
+			IC_line.logic_output[0] = 0;
+			IC_line.logic_output[1] = 1;
+		}
+		
+		//if statement below checks if the logic starts high
+		if (time == 0 && IC_line.start)
+		{
+			IC_line.prev_logic = 1;
+			IC_line.logic_output[2] = logic_vary;
+			IC_line.gate_increment = IC_line.gateDelay;
+			IC_line.gate_delayLevel = logic_vary;
+		}
+		
+		//If statement below needs to be placed before the moveTo function
+		if (document.getElementById("line_color").value == "color")
+		{
+			if (IC_line.gate_signalChange != 0)
+			{
+				logic.beginPath();
+			}
+		}
+			
+		//Moves the logic context to the previous logic state of drawn line
+		logic.moveTo(time-1,IC_line.location+IC_line.logic_output[3]());
+		
+		//if statement checks if the input matches the time, in which...
+		if (time == IC_line.inputs[IC_line.input_iter])
+		{
+			//The increment if the object increases by 1
+			IC_line.input_iter++;
+			
+			//If there is no gate delay, this if statement draws a vertical line
+			if (IC_line.gateDelay == 0)
+			{
+				logic.lineTo(time,IC_line.location+IC_line.logic_output[3]());
+			}
+			//Else, values are stored used to draw gate delay logic later
+			if (IC_line.prev_logic == 0)
+			{
+				IC_line.gate_signalChange = 1;
+				IC_line.logic_output[2] = delay_calculator
+				(
+					IC_line, 
+					IC_line.gateDelay, 
+					IC_line.gate_signalChange
+				);
+				IC_line.prev_logic = 1;
+			}
+			else
+			{
+				IC_line.gate_signalChange = -1;
+				IC_line.logic_output[2] = delay_calculator
+				(
+					IC_line,
+					IC_line.gateDelay, 
+					IC_line.gate_signalChange
+				);
+				IC_line.prev_logic = 0;
+			}
+			
+		}
+				
+		/*The else if statement checks if change reached its max or min value.
+			If so, change caps at its max/min value and	the flag signal_change
+			resets so the else if statement below stops affecting change.
+			Otherwise, change (in/de)creases based on the logic change.
+		*/
+		else if (IC_line.gate_signalChange != 0)
+		{
+			IC_line.logic_output[2] = delay_calculator
+			(
+				IC_line, 
+				IC_line.gateDelay, 
+				IC_line.gate_signalChange
+			);
+			if (IC_line.gate_signalChange == 1 && 
+			IC_line.logic_output[2] == logic_vary)
+			{
+				IC_line.gate_signalChange = 0;
+			}
+			else if (IC_line.gate_signalChange == -1 && 
+			IC_line.logic_output[2] == 0)
+			{
+				IC_line.gate_signalChange = 0;
+			}
+		}
+
+		//Calculates if the singnal is currently HIGH or LOW
+		logic_stateChecker(IC_line);
+		
+		/*The color changing statement is placed after signal calculation so
+		the color accurately representsthe current logic state of the line
+		*/
+		if (document.getElementById("line_color").value == "color")
+		{
+			line_color();
+		}
+		else if(document.getElementById("line_color").value == "no-color")
+		{
+			logic.strokeStyle = "black";
+		}
+		
+		//Draws the line's logic
+		logic.lineTo(time,IC_line.location+IC_line.logic_output[3]());
+		logic.stroke();
+	}
+	
+	function delay_calculator(IC_line, delay_limit, direction)
+	{
+	
+		//if statement used to draw vertical line
+		if (delay_limit == 0)
+		{
+			if (direction == 1)
+			{
+				IC_line.gate_delayLevel = logic_vary;
+			}
+			else
+			{
+				IC_line.gate_delayLevel = 0;
+			}
+		}
+		
+		//else statement used to draw gate delay
+		else
+		{
+			IC_line.gate_increment = IC_line.gate_increment + direction;
+			IC_line.gate_delayLevel = logic_vary * (IC_line.gate_increment / delay_limit);
+		}
+		
+		return IC_line.gate_delayLevel;
+	}
+	
+	//Function below determines if logic is HOGH or LOW
+	function logic_stateChecker(IC_line)
+	{
+		/*logic_levelPercentage is used to pre-emtively calculate how high
+			-- in percentage -- the logic is
+		*/
+		var logic_levelPercentage;
+		logic_levelPercentage = IC_line.gate_delayLevel / logic_vary * 100;
+		
+		//The if statement recalculates logic_levelPercentage if the line is inverted
+		if (IC_line.inverted)
+		{
+			logic_levelPercentage = Math.abs(logic_levelPercentage-100);
+		}
+		
+		//First if satement checks if the line has no HIGH nor LOW threashold
+		if (IC_line.logic_change[0] == 0 &&
+			IC_line.logic_change[1] == 0)
+		{
+			if (IC_line.gate_delayLevel == logic_vary)
+			{
+				IC_line.logic_state = "HIGH";
+			}
+			else
+			{
+				IC_line.logic_state = "LOW";
+			}
+		}
+		//Second if statement checks if the line has ONE HIGH or LOW threashold
+		else if (IC_line.logic_change[0] != 0 && IC_line.logic_change[1] == 0 ||
+			IC_line.logic_change[0] == 0 && IC_line.logic_change[1] != 0)
+		{
+			if ((logic_levelPercentage > IC_line.logic_change[0] && IC_line.logic_change[1] == 0) ||
+				(IC_line.logic_change[0] == 0 && logic_levelPercentage > IC_line.logic_change[1]))
+			{
+				IC_line.logic_state = 'HIGH';
+			}
+			else
+			{
+				IC_line.logic_state = "LOW";
+			}
+		}
+		//Third if statement shecks if the line has a HIGH and LOW threashold
+		else if (IC_line.logic_change[0] != 0 &&
+			IC_line.logic_change[1] != 0)
+		{
+			if (logic_levelPercentage > IC_line.logic_change[0])
+			{
+				IC_line.logic_state = 'HIGH';
+			}
+			else if (logic_levelPercentage < IC_line.logic_change[1])
+			{
+				IC_line.logic_state = 'LOW';
+			}
+		}
+	}
+	
+	//Resets the logic timer and canvas
+	function reset_logicClock()
+	{
+		display.width = display.width;
+		logic_time = 0;		//Time is reset
+		
+		//Array values are reset
+		for (var x = 0; x < logic_lines.length; x++)
+		{
+			logic_lines[x].gate_delayLevel = 0;
+			logic_lines[x].gate_increment = 0;
+			logic_lines[x].prev_logic = 0;
+			logic_lines[x].gate_signalChange = 0;
+			logic_lines[x].input_iter = 0;
+			
+			//Id statement used to reset logic level for gate functions
+			if (logic_lines[x].logic_function[0])
+			{
+				logic_lines[x].logic_state = "LOW";
+			}
+			for (var y = 0; y < 3; y++)
+			{
+				logic_lines[x].logic_output[y] = 0;
+			}
+			stop_time();
+		}
+		stop_logicClock();
+	}
+</script>
+<script src="IC Object Creator.js"></script>
+<script src="Load Logic Function.js"></script>
+<script src="Function Logic Directory.js"></script>
+<script src="Logic Rainbow.js"></script>
+<script src="AND Gate.js"></script>
+<script src="OR Gate.js"></script>
+</html>
